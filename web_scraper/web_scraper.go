@@ -2,8 +2,9 @@ package web_scraper
 
 import (
 	"fmt"
-	"github.com/gocolly/colly"
 	"strings"
+
+	"github.com/gocolly/colly"
 )
 
 var animeSeriesCount = make(map[string]int)
@@ -16,6 +17,7 @@ type Parser struct {
 	FirstTime bool
 }
 
+// Возвращает ссылку на объект типа Parser
 func NewParser(domains, urls []string, firstTime bool) *Parser {
 	return &Parser{
 		Domains:   domains,
@@ -24,15 +26,18 @@ func NewParser(domains, urls []string, firstTime bool) *Parser {
 	}
 }
 
+// Создает colly collector как атрибут объекта типа Parser. Использует текущие параметры объекта типа Parser
 func (p *Parser) CreateScraper() {
 	c := colly.NewCollector(colly.AllowedDomains(p.Domains...))
 	var countSeries int
 	var animeName string
 
+	// Здесь извлекается название аниме
 	c.OnHTML("h1.header_video", func(h *colly.HTMLElement) {
 		animeName = strings.TrimPrefix(h.Text, "Смотреть ")
 		animeName = strings.TrimSuffix(animeName, " все серии и сезоны")
 	})
+	// Здесь извлекается кол-во серий. В случае появления новой - извлекается информация о серии
 	c.OnHTML("a.short-btn", func(element *colly.HTMLElement) {
 		countSeries += 1
 		if countSeries > animeSeriesCount[animeName] && !p.FirstTime {
@@ -49,6 +54,7 @@ func (p *Parser) CreateScraper() {
 	p.c = c
 }
 
+// Запускает парсинг страниц
 func (p *Parser) Scrap() []string {
 	for _, url := range p.URLs {
 		p.c.Visit(url)
