@@ -11,6 +11,6 @@ func CheckError(err error) error {
 
 func LogError(err error) {
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 }

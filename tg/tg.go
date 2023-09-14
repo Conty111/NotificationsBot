@@ -2,23 +2,12 @@ package tg
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"tgbotik/errs"
 	"tgbotik/storage"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-)
-
-const (
-	start            = "/start"
-	help             = "/help"
-	animes           = "/animes_list"
-	listAnimeTitle   = "Список доступных аниме ниже:"
-	helloText        = "Пипипупу, всем привет!"
-	helpText         = "Помоги себе сам."
-	subcscribeText   = "Вы успешно подписались"
-	unsubcscribeText = "Вы успешно отписались"
-	dontSpamText     = "НЕ СПАМИТЬ!!!"
 )
 
 type Bot struct {
@@ -32,7 +21,7 @@ func New(token string, s *storage.PostgreDB) (*Bot, error) {
 	if err != nil {
 		return nil, err
 	}
-	bot.Debug = true
+	bot.Debug = false
 
 	return &Bot{
 		TgClient: bot,
@@ -45,11 +34,12 @@ func (b *Bot) HandleUpdate(u tgbotapi.Update) error {
 	if u.CallbackQuery != nil && u.CallbackQuery.Data != "" {
 		return errs.CheckError(b.HandleCallback(u))
 	}
+	log.Printf("User %s sent the message: %s", u.Message.Text, u.Message.Chat.UserName)
 	switch u.Message.Text {
 	case start:
 		err := b.Storage.SaveUser(int(u.Message.Chat.ID), u.Message.Chat.UserName, true)
 		errs.LogError(err)
-		return errs.CheckError(b.Response(printHello(u.Message.Chat.ID)))
+		return errs.CheckError(b.Response(printHello(u.Message.Chat.ID, u.Message.Chat.UserName)))
 	case help:
 		err := b.Response(printHelp(u.Message.Chat.ID))
 		return errs.CheckError(err)
@@ -66,6 +56,7 @@ func (b *Bot) HandleUpdate(u tgbotapi.Update) error {
 func (b *Bot) HandleCallback(u tgbotapi.Update) error {
 	choiceAnimeID, err := strconv.Atoi(u.CallbackQuery.Data)
 	errs.LogError(err)
+
 	var args []interface{}
 	args = append(args, u.CallbackQuery.Message.Chat.ID)
 	args = append(args, choiceAnimeID)
@@ -75,14 +66,15 @@ func (b *Bot) HandleCallback(u tgbotapi.Update) error {
 		b.Storage.Unsubscribe(int(u.CallbackQuery.Message.Chat.ID), choiceAnimeID)
 		msg = tgbotapi.NewMessage(u.CallbackQuery.Message.Chat.ID, unsubcscribeText)
 	} else {
-		b.Storage.Subscribe(int(u.Message.Chat.ID), choiceAnimeID)
-		msg = tgbotapi.NewMessage(u.CallbackQuery.Message.Chat.ID, unsubcscribeText)
+		b.Storage.Subscribe(int(u.CallbackQuery.Message.Chat.ID), choiceAnimeID)
+		msg = tgbotapi.NewMessage(u.CallbackQuery.Message.Chat.ID, subcscribeText)
 	}
 	return errs.CheckError(b.Response(msg))
 }
 
 // Send response to the chat
 func (b *Bot) Response(msg tgbotapi.MessageConfig) error {
+	log.Printf("Responsing '%s' to %d user", msg.Text, msg.ChatID)
 	_, err := b.TgClient.Send(msg)
 	return errs.CheckError(err)
 }
@@ -101,8 +93,11 @@ func (b *Bot) printAnimes(chatID int64) tgbotapi.MessageConfig {
 }
 
 // Returns hello message
-func printHello(chatID int64) tgbotapi.MessageConfig {
-	return tgbotapi.NewMessage(chatID, helloText)
+func printHello(chatID int64, userName string) tgbotapi.MessageConfig {
+	return tgbotapi.NewMessage(
+		chatID,
+		helloText+fmt.Sprintf("%s!\nКакое из знакомых мне аниме ты смотришь?)",
+			userName))
 }
 
 // Returns help message

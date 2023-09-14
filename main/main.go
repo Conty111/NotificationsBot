@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"tgbotik/errs"
 	"tgbotik/storage"
 	"tgbotik/tg"
-	"tgbotik/web_scraper"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -42,10 +42,9 @@ func main() {
 
 	db.SaveAnime("TestAnime", "Last Seria", "href", 56)
 	db.SaveAnime("TestAnime2", "Last Seria2", "href2", 57)
-	db.SaveUser(123, "Antonio", true)
 
 	// Запускается парсер
-	go web_scraper.Start(db, timeParseDelay, []string{}, domains)
+	// go web_scraper.Start(db, timeParseDelay, []string{}, domains)
 
 	bot, err := tg.New(os.Getenv("TGBOT_TOKEN"), db)
 	errs.LogError(err)
@@ -54,6 +53,7 @@ func main() {
 	updateConfig.Timeout = 15
 	updates := bot.TgClient.GetUpdatesChan(updateConfig)
 
+	log.Print("Started get updates from telegram API")
 	// Запускается прослушивание входящих update-ов
 	for update := range updates {
 		bot.HandleUpdate(update)
@@ -62,8 +62,9 @@ func main() {
 		newSeries, err := db.GetNewSeries()
 		errs.LogError(err)
 		if len(newSeries) > 0 {
+			log.Print("Finded new series")
 			for _, s := range newSeries {
-				text := fmt.Sprintf("Хэй-хэй-хэй, вышла новая серия по аниме %s\nА вот и она: %s %s",
+				text := fmt.Sprintf("Хэй-хэй-хэй, вышла новая серия по аниме %s\nА вот и она: %s\n%s",
 					s.AnimeName, s.Text, s.Href)
 
 				// Получаем пользователей, подписанных на аниме и отправляем им сообщения

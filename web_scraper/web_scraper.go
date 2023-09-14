@@ -32,6 +32,7 @@ func NewParser(domains, urls []string, firstTime bool, storage *storage.PostgreD
 // Запускает парсинг с переданными параметрами. В этом проекте данная функция
 // должна запускаться параллельно
 func Start(db *storage.PostgreDB, timeDelay time.Duration, URLs []string, domains []string) {
+	log.Print("Started to work the parser")
 	parser := NewParser(domains, URLs, true, db)
 	parser.CreateScraper()
 
