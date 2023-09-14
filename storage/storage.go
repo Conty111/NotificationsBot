@@ -9,19 +9,6 @@ import (
 	_ "github.com/lib/pq"
 )
 
-type Storage interface {
-	Connect() error
-	SaveUser(chatID int, userName string, status bool) error
-	SaveAnime(animeName, lastSeriaText, lastSeriaHref string, countSeries int) (int64, error)
-	Subscribe(chatID, animeID int) error
-	Unsubscribe(chatID, animeID int) error
-	SetStatus(table string, id int, status bool) error
-	GetNewSeries() ([]NewSeria, error)
-	SetNewSeries(animeID int, seriaText, seriaHref string) error
-	Exists(column, table string, value []interface{}) (bool, error)
-	FetchData(table string, columns []string, colArgs []string, args []interface{}) ([]interface{}, error)
-}
-
 type PostgreDB struct {
 	host     string
 	user     string
@@ -38,6 +25,7 @@ type NewSeria struct {
 	Href      string
 }
 
+// Return the *PostgreDB with params
 func New(host, user, password, dbname string, port int) (*PostgreDB, error) {
 	p := PostgreDB{
 		host:     host,
@@ -53,6 +41,7 @@ func New(host, user, password, dbname string, port int) (*PostgreDB, error) {
 	return &p, nil
 }
 
+// Connect to the database with params
 func (s *PostgreDB) Connect() error {
 	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		s.host, s.port, s.user, s.password, s.dbname)
@@ -66,6 +55,7 @@ func (s *PostgreDB) Connect() error {
 	return nil
 }
 
+// Check exist in database. If exist, returns true
 func (s *PostgreDB) Exists(table string, colArgs []string, values []interface{}) (bool, error) {
 	req := fmt.Sprintf("select * from %s where ", table)
 	if len(colArgs) == 1 {
@@ -89,6 +79,7 @@ func (s *PostgreDB) Exists(table string, colArgs []string, values []interface{})
 	return true, nil
 }
 
+// Save the user into a Users table. If user is already exist, activate him in DB
 func (s *PostgreDB) SaveUser(chatID int, userName string, status bool) error {
 	res, err := s.DB.Query("select Status from Users where ID = $1", chatID)
 	defer res.Close()
@@ -99,17 +90,19 @@ func (s *PostgreDB) SaveUser(chatID int, userName string, status bool) error {
 		rowCount += 1
 		res.Scan(&stat)
 	}
+
 	if rowCount == 0 {
 		_, err := s.DB.Exec("insert into Users (ID, Username, Status) values ($1, $2, $3)", chatID, userName, status)
-		return errs.CheckError(err)
-	} else if !stat {
-		err = s.SetStatus("Users", chatID, true)
 		log.Printf("Saving user %d to database", chatID)
 		return errs.CheckError(err)
+	} else if !stat {
+		return s.UpdateUserStatus(chatID, true)
 	}
+
 	return err
 }
 
+// Save anime into a Animes table with status false
 func (s *PostgreDB) SaveAnime(animeName, lastSeriaText, lastSeriaHref string, countSeries int) error {
 	res, err := s.DB.Query("select * from Animes where AnimeName = $1", animeName)
 	defer res.Close()
@@ -124,9 +117,9 @@ func (s *PostgreDB) SaveAnime(animeName, lastSeriaText, lastSeriaHref string, co
 		return errs.CheckError(err)
 	}
 	return fmt.Errorf("This Anime is already exists: %s", animeName)
-
 }
 
+// Create a new row in Subscribers table
 func (s *PostgreDB) Subscribe(chatID, animeID int) error {
 	var args []interface{}
 	args = append(args, chatID)
@@ -140,6 +133,7 @@ func (s *PostgreDB) Subscribe(chatID, animeID int) error {
 	return errs.CheckError(err)
 }
 
+// Removes the row in Subscribers table
 func (s *PostgreDB) Unsubscribe(chatID, animeID int) error {
 	_, err := s.DB.Exec("delete from Subscribers where ChatID = $1 and AnimeID = $2", chatID, animeID)
 	if err == sql.ErrNoRows {
@@ -148,6 +142,7 @@ func (s *PostgreDB) Unsubscribe(chatID, animeID int) error {
 	return errs.CheckError(err)
 }
 
+// Returns a list of new series from database
 func (s *PostgreDB) GetNewSeries() ([]NewSeria, error) {
 	rows, err := s.DB.Query("select ID, AnimeName, LastSeriaText, LastSeriaHref from Animes where Status = true")
 	if err != nil {
@@ -167,12 +162,14 @@ func (s *PostgreDB) GetNewSeries() ([]NewSeria, error) {
 	return res, nil
 }
 
+// Update columns LastSeriaText and LastSeriaHref for animeID in Animes table
 func (s *PostgreDB) SetNewSeries(animeID int, seriaText, seriaHref string) error {
 	req := "update Animes set LastSeriaText = $1 and LastSeriaHref = $2 and Status = $3 where ID = $4"
 	_, err := s.DB.Exec(req, seriaText, seriaHref, true, animeID)
 	return errs.CheckError(err)
 }
 
+// Update column Status
 func (s *PostgreDB) SetStatus(table string, id int, status bool) error {
 	var args []interface{}
 	args = append(args, id)
@@ -186,6 +183,7 @@ func (s *PostgreDB) SetStatus(table string, id int, status bool) error {
 	return fmt.Errorf("Wrong table or id, row isn't exists")
 }
 
+// Returns list of users who subscribed on anime with animeID
 func (s *PostgreDB) GetSubscribers(animeID int) ([]int, error) {
 	var args []interface{}
 	args = append(args, animeID)
@@ -210,6 +208,7 @@ func (s *PostgreDB) GetSubscribers(animeID int) ([]int, error) {
 	return res, nil
 }
 
+// Return ID and count of series of anime
 func (s *PostgreDB) CountSeries(animeName string) (int, int, error) {
 	var args []interface{}
 	args = append(args, animeName)
@@ -228,6 +227,30 @@ func (s *PostgreDB) CountSeries(animeName string) (int, int, error) {
 	return id, val, nil
 }
 
+// Returns list of all saved anime such as (list_ID, list_animeName, error)
+func (s *PostgreDB) Animes() ([]int, []string, error) {
+	rows, err := s.DB.Query("select ID, AnimeName from Animes")
+	errs.LogError(err)
+	var resID []int
+	var resName []string
+	var name string
+	var id int
+	for rows.Next() {
+		rows.Scan(&id, &name)
+		resID = append(resID, id)
+		resName = append(resName, name)
+	}
+	return resID, resName, nil
+}
+
+// Update users status
+func (s *PostgreDB) UpdateUserStatus(chatID int, status bool) error {
+	err := s.SetStatus("Users", chatID, status)
+	log.Printf("Updating status of user %d in database", chatID)
+	return errs.CheckError(err)
+}
+
+// Count rows in sql.Rows
 func countRows(res *sql.Rows) int {
 	var i int
 	for res.Next() {

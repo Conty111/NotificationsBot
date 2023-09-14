@@ -6,6 +6,7 @@ import (
 	"strings"
 	"tgbotik/errs"
 	"tgbotik/storage"
+	"time"
 
 	"github.com/gocolly/colly"
 )
@@ -25,6 +26,21 @@ func NewParser(domains, urls []string, firstTime bool, storage *storage.PostgreD
 		URLs:      urls,
 		FirstTime: firstTime,
 		Storage:   storage,
+	}
+}
+
+// Запускает парсинг с переданными параметрами. В этом проекте данная функция
+// должна запускаться параллельно
+func Start(db *storage.PostgreDB, timeDelay time.Duration, URLs []string, domains []string) {
+	parser := NewParser(domains, URLs, true, db)
+	parser.CreateScraper()
+
+	parser.Scrap()
+	parser.FirstTime = false
+
+	for t := range time.Tick(timeDelay) {
+		log.Printf("Проверка наличия новых серий в %s...", t)
+		parser.Scrap()
 	}
 }
 
