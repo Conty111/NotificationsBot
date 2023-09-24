@@ -94,10 +94,9 @@ func (b *Bot) printAnimes(chatID int64) tgbotapi.MessageConfig {
 
 // Returns hello message
 func printHello(chatID int64, userName string) tgbotapi.MessageConfig {
-	return tgbotapi.NewMessage(
-		chatID,
-		helloText+fmt.Sprintf("%s!\nКакое из знакомых мне аниме ты смотришь?)",
-			userName))
+	msg := tgbotapi.NewMessage(chatID, helloText+fmt.Sprintf("%s!\nКакое из знакомых мне аниме ты смотришь?)", userName))
+	msg.ReplyMarkup = keyboard
+	return msg
 }
 
 // Returns help message

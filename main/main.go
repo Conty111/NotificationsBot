@@ -1,15 +1,12 @@
 package main
 
 import (
-	"fmt"
-	"log"
-	"os"
+	"math/rand"
+	"sync"
 	"tgbotik/errs"
 	"tgbotik/storage"
-	"tgbotik/tg"
+	"tgbotik/web_scraper"
 	"time"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 const (
@@ -18,10 +15,14 @@ const (
 	user           = "bot"
 	password       = "Mushoku777!"
 	dbname         = "Rudeus"
-	timeParseDelay = time.Minute * 30
+	timeParseDelay = time.Minute * 15
 )
 
 var domains = []string{"jut.su", "www.jut.su"}
+var sites = []string{"https://jut.su/mushoku-tensei/",
+	"https://jut.su/shingekii-no-kyojin/",
+	"https://jut.su/kime-no-yaiba/",
+	"https://jut.su/full-metal-alchemist/"}
 
 func main() {
 	// Подключаемся к БД
@@ -33,6 +34,8 @@ func main() {
 	// По извлеченному animeID находим всех активных и подписанных на аниме пользователей
 	// Проходясь по полученному списку пользователей, отправляем им сообщения в ТГ
 
+	rand.Seed(time.Now().UnixNano()) // Удалить потом
+
 	db, err := storage.New(host, user, password, dbname, port)
 	errs.LogError(err)
 	defer func() {
@@ -40,43 +43,44 @@ func main() {
 		errs.LogError(err)
 	}()
 
-	db.SaveAnime("TestAnime", "Last Seria", "href", 56)
-	db.SaveAnime("TestAnime2", "Last Seria2", "href2", 57)
+	var wg sync.WaitGroup // Удалить потом
 
 	// Запускается парсер
-	// go web_scraper.Start(db, timeParseDelay, []string{}, domains)
+	wg.Add(1) // Удалить потом
+	go web_scraper.Start(db, timeParseDelay, sites, domains)
+	wg.Wait() // Удалить потом
 
-	bot, err := tg.New(os.Getenv("TGBOT_TOKEN"), db)
-	errs.LogError(err)
+	// bot, err := tg.New(os.Getenv("TGBOT_TOKEN"), db)
+	// errs.LogError(err)
 
-	updateConfig := tgbotapi.NewUpdate(0)
-	updateConfig.Timeout = 15
-	updates := bot.TgClient.GetUpdatesChan(updateConfig)
+	// updateConfig := tgbotapi.NewUpdate(0)
+	// updateConfig.Timeout = 15
+	// updates := bot.TgClient.GetUpdatesChan(updateConfig)
 
-	log.Print("Started get updates from telegram API")
-	// Запускается прослушивание входящих update-ов
-	for update := range updates {
-		bot.HandleUpdate(update)
+	// log.Print("Started get updates from telegram API")
+	// // Запускается прослушивание входящих update-ов
+	// for update := range updates {
+	// 	bot.HandleUpdate(update)
 
-		// Здесь проверяется БД на наличие новых серий
-		newSeries, err := db.GetNewSeries()
-		errs.LogError(err)
-		if len(newSeries) > 0 {
-			log.Print("Finded new series")
-			for _, s := range newSeries {
-				text := fmt.Sprintf("Хэй-хэй-хэй, вышла новая серия по аниме %s\nА вот и она: %s\n%s",
-					s.AnimeName, s.Text, s.Href)
+	// 	// Здесь проверяется БД на наличие новых серий
+	// 	newSeries, err := db.GetNewSeries()
+	// 	errs.LogError(err)
+	// 	if len(newSeries) > 0 {
+	// 		log.Print("Finded new series")
+	// 		for _, s := range newSeries {
+	// 			text := fmt.Sprintf("Хэй-хэй-хэй, вышла новая серия по аниме %s\nА вот и она: %s\n%s",
+	// 				s.AnimeName, s.Text, s.Href)
 
-				// Получаем пользователей, подписанных на аниме и отправляем им сообщения
-				usersID, err := db.GetSubscribers(s.ID)
-				errs.LogError(err)
-				for _, ID := range usersID {
-					msg := tgbotapi.NewMessage(int64(ID), text)
-					_, err = bot.TgClient.Send(msg)
-					errs.LogError(err)
-				}
-				db.SetStatus("Animes", s.ID, false)
-			}
-		}
-	}
+	// 			// Получаем пользователей, подписанных на аниме и отправляем им сообщения
+	// 			usersID, err := db.GetSubscribers(s.ID)
+	// 			errs.LogError(err)
+	// 			for _, ID := range usersID {
+	// 				msg := tgbotapi.NewMessage(int64(ID), text)
+	// 				_, err = bot.TgClient.Send(msg)
+	// 				errs.LogError(err)
+	// 			}
+	// 			db.SetStatus("Animes", s.ID, false)
+	// 		}
+	// 	}
+	// }
 }

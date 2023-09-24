@@ -19,6 +19,18 @@ type Parser struct {
 	Storage   *storage.PostgreDB
 }
 
+type Anime struct {
+	ID            int
+	Name          string
+	LastSeriaText string
+	LastSeriaHref string
+	CountSeries   int
+	Status        bool
+}
+
+var a *Anime
+var series [][]string
+
 // Возвращает ссылку на объект типа Parser
 func NewParser(domains, urls []string, firstTime bool, storage *storage.PostgreDB) *Parser {
 	return &Parser{
@@ -37,7 +49,6 @@ func Start(db *storage.PostgreDB, timeDelay time.Duration, URLs []string, domain
 	parser.CreateScraper()
 
 	parser.Scrap()
-	parser.FirstTime = false
 
 	for t := range time.Tick(timeDelay) {
 		log.Printf("Проверка наличия новых серий в %s...", t)
@@ -48,43 +59,34 @@ func Start(db *storage.PostgreDB, timeDelay time.Duration, URLs []string, domain
 // Создает colly collector как атрибут объекта типа Parser. Использует текущие параметры объекта типа Parser
 func (p *Parser) CreateScraper() {
 	c := colly.NewCollector(colly.AllowedDomains(p.Domains...))
-	var animeName string
-	var newSeriaHref string
-	var newSeriaText string
-	var countSeries, i, animeID int
+	var i int
 
 	// Здесь извлекается название аниме
 	c.OnHTML("h1.header_video", func(h *colly.HTMLElement) {
-		animeName = strings.TrimPrefix(h.Text, "Смотреть ")
+		log.Print("Fetching the anime name")
+		animeName := strings.TrimPrefix(h.Text, "Смотреть ")
 		animeName = strings.TrimSuffix(animeName, " все серии и сезоны")
-	})
-	var args []interface{}
-	args = append(args, animeName)
-	exist, err := p.Storage.Exists("Animes", []string{"AnimeName"}, args)
-	errs.LogError(err)
-	if exist {
-		animeID, countSeries, err = p.Storage.CountSeries(animeName)
+		exist, err := p.CheckAnime(animeName)
 		errs.LogError(err)
-	}
+		if exist {
+			animeID, countSeries, err := p.Storage.CountSeries(animeName)
+			errs.LogError(err)
+			a.CountSeries = countSeries
+			a.ID = animeID
+		}
+		a.Name = animeName
+	})
 
 	// Здесь извлекается кол-во серий. В случае появления новой - извлекается информация о серии
 	c.OnHTML("a.short-btn", func(element *colly.HTMLElement) {
 		i += 1
-		if i > countSeries {
-			newSeriaHref = fmt.Sprintf("https://jut.su%s", element.Attr("href"))
-			newSeriaText = fmt.Sprint(element.Text)
-			countSeries = i
+		if i > a.CountSeries {
+			a.LastSeriaHref = fmt.Sprintf("https://jut.su%s", element.Attr("href"))
+			a.LastSeriaText = fmt.Sprint(element.Text)
+			a.CountSeries = i
+			a.Status = true
 		}
 	})
-
-	if exist {
-		err = p.Storage.SetNewSeries(animeID, newSeriaText, newSeriaHref)
-		log.Printf("New seria in %s!", animeName)
-	} else {
-		err = p.Storage.SaveAnime(animeName, newSeriaText, newSeriaHref, countSeries)
-		log.Printf("Finded new anime %s", animeName)
-	}
-	errs.LogError(err)
 
 	c.OnRequest(collyOnRequest)
 	c.OnError(collyOnError)
@@ -96,7 +98,21 @@ func (p *Parser) CreateScraper() {
 func (p *Parser) Scrap() {
 	for _, url := range p.URLs {
 		p.c.Visit(url)
+		if a.ID == 0 {
+			errs.LogError(p.Storage.SaveAnime(a.Name, a.LastSeriaText, a.LastSeriaHref, a.CountSeries))
+		} else if a.Status {
+			errs.LogError(p.Storage.SetNewSeries(a.ID, a.LastSeriaText, a.LastSeriaHref))
+		}
 	}
+}
+
+// Check if exist the anime by name
+func (p *Parser) CheckAnime(animeName string) (bool, error) {
+	var args []interface{}
+	args = append(args, animeName)
+	log.Print("Checking saved anime")
+	exist, err := p.Storage.Exists("Animes", []string{"AnimeName"}, args)
+	return exist, err
 }
 
 func collyOnError(response *colly.Response, err error) {
